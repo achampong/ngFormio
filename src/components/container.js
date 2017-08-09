@@ -1,4 +1,6 @@
 var fs = require('fs');
+var GridUtils = require('../factories/GridUtils')();
+
 module.exports = function(app) {
   app.config([
     'formioComponentsProvider',
@@ -7,8 +9,27 @@ module.exports = function(app) {
         title: 'Container',
         template: 'formio/components/container.html',
         viewTemplate: 'formio/componentsView/container.html',
-        group: 'layout',
+        group: 'advanced',
         icon: 'fa fa-folder-open',
+        tableView: function(data, component, $interpolate, componentInfo, tableChild) {
+          var view = '<table class="table table-striped table-bordered table-child">';
+
+          if (!tableChild) {
+            view += '<thead><tr>';
+            view += '<th>' + (component.label || '') + ' (' + component.key + ')</th>';
+            view += '</tr></thead>';
+          }
+
+          view += '<tbody>';
+
+          // Render a value for each column item.
+          angular.forEach(component.components, function(component) {
+            view += '<tr>' + GridUtils.columnForComponent(data, component, $interpolate, componentInfo, true) + '</tr>';
+          });
+
+          view += '</tbody></table>';
+          return view;
+        },
         settings: {
           input: true,
           tree: true,
@@ -17,7 +38,8 @@ module.exports = function(app) {
           label: '',
           key: 'container',
           protected: false,
-          persistent: true
+          persistent: true,
+          clearOnHide: true
         }
       });
     }

@@ -10,42 +10,94 @@ module.exports = function(app) {
           return $interpolate('<span>{{ "' + data + '" | date: "' + component.format + '" }}</span>')();
         },
         group: 'advanced',
-        controller: ['$scope', '$timeout', function($scope, $timeout) {
+        /* eslint-disable no-unused-vars */
+        // NOTE: Do not delete the "moment" variable here. That is needed to make moment() work in default dates.
+        controller: ['$scope', '$timeout', 'moment', function($scope, $timeout, moment) {
+        /* eslint-enable no-unused-vars */
+          // Close calendar pop up when tabbing off button
+          $scope.onKeyDown = function(event) {
+            return event.keyCode === 9 ? false : $scope.calendarOpen;
+          };
+
+          var dateValue = function() {
+            // If the date is set, then return the true date value.
+            if ($scope.data[$scope.component.key]) {
+              return ($scope.data[$scope.component.key] instanceof Date) ? $scope.data[$scope.component.key] : new Date($scope.data[$scope.component.key]);
+            }
+
+            // See if a default date is set.
+            if ($scope.component.defaultDate) {
+              var defaultDate = new Date($scope.component.defaultDate);
+              if (!defaultDate || isNaN(defaultDate.getDate())) {
+                try {
+                  defaultDate = new Date(eval($scope.component.defaultDate));
+                }
+                catch (e) {
+                  defaultDate = '';
+                }
+              }
+
+              if (defaultDate && !isNaN(defaultDate.getDate())) {
+                return defaultDate;
+              }
+            }
+
+            // Default to empty.
+            return '';
+          };
+
           // Ensure the date value is always a date object when loaded, then unbind the watch.
-          var loadComplete = $scope.$watch('data.' + $scope.component.key, function() {
-            if ($scope.data && $scope.data[$scope.component.key] && !($scope.data[$scope.component.key] instanceof Date)) {
-              $scope.data[$scope.component.key] = new Date($scope.data[$scope.component.key]);
-              loadComplete();
+          $scope.$watch('data.' + $scope.component.key, function() {
+            var newValue = dateValue();
+            if (newValue) {
+              $scope.data[$scope.component.key] = newValue;
             }
           });
 
-          if ($scope.component.defaultDate.length === 0) {
-            $scope.component.defaultDate = '';
+          // Watch for changes to the meridian settings to synchronize the submissionGrid and component view.
+          $scope.$watch('component.timePicker.showMeridian', function(update) {
+            // Remove any meridian reference, because were not in 12 hr.
+            if (!$scope.component.enableTime || !update) {
+              $scope.component.format = $scope.component.format.replace(/ a/, '');
+              return;
+            }
+
+            // If we're missing the meridian string and were in 12 hr, add it.
+            if (update && $scope.component.format.indexOf(' a') === -1) {
+              $scope.component.format += ' a';
+            }
+          });
+
+          if (!$scope.component.datePicker.maxDate) {
+            delete $scope.component.datePicker.maxDate;
           }
           else {
-            var dateVal = new Date($scope.component.defaultDate);
-            if (isNaN(dateVal.getDate())) {
-              try {
-                dateVal = new Date(eval($scope.component.defaultDate));
-              }
-              catch (e) {
-                dateVal = '';
-              }
-            }
-
-            if (isNaN(dateVal)) {
-              dateVal = '';
-            }
-
-            $scope.component.defaultDate = dateVal;
-            $scope.data[$scope.component.key] = dateVal;
+            var maxDate = new Date($scope.component.datePicker.maxDate);
+            $scope.component.datePicker.maxDate = new Date(
+              maxDate.getUTCFullYear(),
+              maxDate.getUTCMonth(),
+              maxDate.getUTCDate(),
+              23,
+              59,
+              59,
+              999
+            );
           }
 
-          if (!$scope.component.maxDate) {
-            delete $scope.component.maxDate;
+          if (!$scope.component.datePicker.minDate) {
+            delete $scope.component.datePicker.minDate;
           }
-          if (!$scope.component.minDate) {
-            delete $scope.component.minDate;
+          else {
+            var minDate = new Date($scope.component.datePicker.minDate);
+            $scope.component.datePicker.minDate = new Date(
+              minDate.getUTCFullYear(),
+              minDate.getUTCMonth(),
+              minDate.getUTCDate(),
+              0,
+              0,
+              0,
+              0
+            );
           }
 
           $scope.autoOpen = true;
@@ -62,12 +114,10 @@ module.exports = function(app) {
           label: '',
           key: 'datetimeField',
           placeholder: '',
-          format: 'yyyy-MM-dd HH:mm',
+          format: 'yyyy-MM-dd HH:mm a',
           enableDate: true,
           enableTime: true,
           defaultDate: '',
-          minDate: null,
-          maxDate: null,
           datepickerMode: 'day',
           datePicker: {
             showWeeks: true,
@@ -75,7 +125,10 @@ module.exports = function(app) {
             initDate: '',
             minMode: 'day',
             maxMode: 'year',
-            yearRange: '20'
+            yearRows: 4,
+            yearColumns: 5,
+            minDate: null,
+            maxDate: null
           },
           timePicker: {
             hourStep: 1,
@@ -87,6 +140,8 @@ module.exports = function(app) {
           },
           protected: false,
           persistent: true,
+          hidden: false,
+          clearOnHide: true,
           validate: {
             required: false,
             custom: ''

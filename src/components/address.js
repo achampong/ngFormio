@@ -10,6 +10,7 @@ module.exports = function(app) {
           return $scope.component.multiple ? 'formio/components/address-multiple.html' : 'formio/components/address.html';
         },
         controller: ['$scope', '$http', function($scope, $http) {
+          if ($scope.builder) return;
           $scope.address = {};
           $scope.addresses = [];
           $scope.refreshAddress = function(address) {
@@ -54,8 +55,10 @@ module.exports = function(app) {
           placeholder: '',
           multiple: false,
           protected: false,
+          clearOnHide: true,
           unique: false,
           persistent: true,
+          hidden: false,
           map: {
             region: '',
             key: ''

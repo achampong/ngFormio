@@ -1,3 +1,4 @@
+require('./polyfills/polyfills');
 var fs = require('fs');
 
 var app = angular.module('formio', [
@@ -7,8 +8,11 @@ var app = angular.module('formio', [
   'ui.select',
   'ui.mask',
   'angularMoment',
+  'ngDialog',
   'ngFileUpload',
-  'ngFileSaver'
+  'ngFileSaver',
+  'ui.ace',
+  'ckeditor'
 ]);
 
 /**
@@ -47,6 +51,10 @@ app.directive('formioElement', require('./directives/formioElement'));
 
 app.directive('formioWizard', require('./directives/formioWizard'));
 
+app.directive('formioBindHtml', require('./directives/formioBindHtml.js'));
+
+app.directive('formioScriptEditor', require('./directives/formioScriptEditor'));
+
 /**
  * Filter to flatten form components.
  */
@@ -56,15 +64,25 @@ app.filter('tableView', require('./filters/tableView'));
 app.filter('tableFieldView', require('./filters/tableFieldView'));
 app.filter('safehtml', require('./filters/safehtml'));
 app.filter('formioTranslate', require('./filters/translate'));
-
+app.filter('trustAsResourceUrl', require('./filters/trusturl'));
 app.config([
   '$httpProvider',
+  '$injector',
   function(
-    $httpProvider
+    $httpProvider,
+    $injector
   ) {
     if (!$httpProvider.defaults.headers.get) {
       $httpProvider.defaults.headers.get = {};
     }
+
+    // Make sure that ngAnimate doesn't mess up loader.
+    try {
+      $injector.get('$animateProvider').classNameFilter(/^((?!(fa-spinner|glyphicon-spin)).)*$/);
+    }
+    /* eslint-disable no-empty */
+    catch (err) {}
+    /* eslint-enable no-empty */
 
     // Disable IE caching for GET requests.
     $httpProvider.defaults.headers.get['Cache-Control'] = 'no-cache';
@@ -75,7 +93,22 @@ app.config([
 
 app.run([
   '$templateCache',
-  function($templateCache) {
+  '$rootScope',
+  '$window',
+  function($templateCache, $rootScope, $window) {
+    $window.addEventListener('message', function(event) {
+      var eventData = null;
+      try {
+        eventData = JSON.parse(event.data);
+      }
+      catch (err) {
+        eventData = null;
+      }
+      if (eventData && eventData.name) {
+        $rootScope.$broadcast('iframe-' + eventData.name, eventData.data);
+      }
+    });
+
     // The template for the formio forms.
     $templateCache.put('formio.html',
       fs.readFileSync(__dirname + '/templates/formio.html', 'utf8')

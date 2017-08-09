@@ -1,4 +1,5 @@
-<input type="{{ component.inputType }}"
+<input
+  type="{{ component.inputType }}"
   class="form-control"
   id="{{ componentId }}"
   name="{{ componentId }}"
@@ -7,12 +8,12 @@
   ng-model="data[component.key]"
   ng-model-options="{ debounce: 500 }"
   safe-multiple-to-single
-  ng-required="component.validate.required"
+  ng-required="isRequired(component)"
   ng-minlength="component.validate.minLength"
   ng-maxlength="component.validate.maxLength"
   ng-pattern="component.validate.pattern"
   custom-validator="component.validate.custom"
-  placeholder="{{ component.placeholder | formioTranslate }}"
+  ng-attr-placeholder="{{ component.placeholder | formioTranslate:null:builder }}"
   ui-mask="{{ component.inputMask }}"
   ui-mask-placeholder=""
   ui-options="uiMaskOptions"

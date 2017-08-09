@@ -1,6 +1,6 @@
 <div class="panel panel-{{ component.theme }}" id="{{ component.key }}">
   <div ng-if="component.title" class="panel-heading">
-    <h3 class="panel-title">{{ component.title | formioTranslate }}</h3>
+    <h3 class="panel-title">{{ component.title | formioTranslate:null:builder }}</h3>
   </div>
   <div class="panel-body">
     <formio-component
@@ -8,12 +8,15 @@
       component="_component"
       data="data"
       formio="formio"
-      read-only="readOnly"
+      submission="submission"
+      hide-components="hideComponents"
+      ng-if="builder ? '::true' : isVisible(_component, data)"
+      read-only="isDisabled(_component, data)"
       formio-form="formioForm"
       grid-row="gridRow"
       grid-col="gridCol"
-      ng-if="show[component.key || ''] && show[_component.key || '']"
-      show="show"
+      builder="builder"
+      options="options"
     ></formio-component>
   </div>
 </div>

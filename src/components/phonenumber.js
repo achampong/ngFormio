@@ -19,7 +19,9 @@ module.exports = function(app) {
           protected: false,
           unique: false,
           persistent: true,
+          hidden: false,
           defaultValue: '',
+          clearOnHide: true,
           validate: {
             required: false
           }

@@ -18,7 +18,9 @@ module.exports = function(app) {
           multiple: false,
           defaultValue: '',
           protected: false,
-          persistent: true
+          persistent: true,
+          hidden: false,
+          clearOnHide: true
         },
         viewTemplate: 'formio/componentsView/file.html'
       });
@@ -38,7 +40,12 @@ module.exports = function(app) {
       controller: [
         '$scope',
         function($scope) {
+          if ($scope.builder) return;
           $scope.removeFile = function(event, index) {
+            var component = $scope.$parent.component;
+            if (component.storage === 'url') {
+              $scope.$parent.formio.makeRequest('', component.url + '/' + $scope.files[index].name, 'delete');
+            }
             event.preventDefault();
             $scope.files.splice(index, 1);
           };
@@ -65,7 +72,12 @@ module.exports = function(app) {
       controller: [
         '$scope',
         function($scope) {
+          if ($scope.builder) return;
           $scope.removeFile = function(event, index) {
+            var component = $scope.$parent.component;
+            if (component.storage === 'url') {
+              $scope.$parent.formio.makeRequest('', component.url + '/' + $scope.files[index].name, 'delete');
+            }
             event.preventDefault();
             $scope.files.splice(index, 1);
           };
@@ -94,10 +106,13 @@ module.exports = function(app) {
           $scope,
           Formio
         ) {
+          if ($scope.builder) return;
           $scope.getFile = function(evt) {
             evt.preventDefault();
             $scope.form = $scope.form || $rootScope.filePath;
-            var formio = new Formio($scope.form);
+            $scope.options = $scope.options || {};
+            var baseUrl = $scope.options.baseUrl || Formio.getBaseUrl();
+            var formio = new Formio($scope.form, {base: baseUrl});
             formio
               .downloadFile($scope.file).then(function(file) {
                 if (file) {
@@ -124,7 +139,7 @@ module.exports = function(app) {
         form: '=',
         width: '='
       },
-      template: '<img ng-src="{{ imageSrc }}" alt="{{ file.name }}" ng-style="{width: width}" />',
+      template: '<img ng-src="{{ file.imageSrc }}" alt="{{ file.name }}" ng-style="{width: width}" />',
       controller: [
         '$rootScope',
         '$scope',
@@ -134,12 +149,14 @@ module.exports = function(app) {
           $scope,
           Formio
         ) {
+          if ($scope.builder) return;
           $scope.form = $scope.form || $rootScope.filePath;
-          var formio = new Formio($scope.form);
-
+          $scope.options = $scope.options || {};
+          var baseUrl = $scope.options.baseUrl || Formio.getBaseUrl();
+          var formio = new Formio($scope.form, {base: baseUrl});
           formio.downloadFile($scope.file)
             .then(function(result) {
-              $scope.imageSrc = result.url;
+              $scope.file.imageSrc = result.url;
               $scope.$apply();
             });
         }
@@ -149,24 +166,18 @@ module.exports = function(app) {
 
   app.controller('formioFileUpload', [
     '$scope',
+    '$interpolate',
     'FormioUtils',
     function(
       $scope,
+      $interpolate,
       FormioUtils
     ) {
+      if ($scope.builder) return;
       $scope.fileUploads = {};
-
       $scope.removeUpload = function(index) {
         delete $scope.fileUploads[index];
       };
-
-      // This fixes new fields having an empty space in the array.
-      if ($scope.data && $scope.data[$scope.component.key] === '') {
-        $scope.data[$scope.component.key] = [];
-      }
-      if ($scope.data && $scope.data[$scope.component.key] && $scope.data[$scope.component.key][0] === '') {
-        $scope.data[$scope.component.key].splice(0, 1);
-      }
 
       $scope.upload = function(files) {
         if ($scope.component.storage && files && files.length) {
@@ -180,6 +191,7 @@ module.exports = function(app) {
               message: 'Starting upload'
             };
             var dir = $scope.component.dir || '';
+            dir = $interpolate(dir)({data: $scope.data, row: $scope.row});
             var formio = null;
             if ($scope.formio) {
               formio = $scope.formio;
@@ -198,21 +210,27 @@ module.exports = function(app) {
               }, $scope.component.url)
                 .then(function(fileInfo) {
                   delete $scope.fileUploads[fileName];
-                  // Ensure that the file component is an array.
-                  if (
-                    !$scope.data[$scope.component.key] ||
-                    !($scope.data[$scope.component.key] instanceof Array)
-                  ) {
+                  // This fixes new fields having an empty space in the array.
+                  if ($scope.data && $scope.data[$scope.component.key] === '') {
                     $scope.data[$scope.component.key] = [];
                   }
+                  if ($scope.data && $scope.data[$scope.component.key] === undefined) {
+                    $scope.data[$scope.component.key] = [];
+                  }
+                  if (!$scope.data[$scope.component.key] || !($scope.data[$scope.component.key] instanceof Array)) {
+                    $scope.data[$scope.component.key] = [];
+                  }
+
                   $scope.data[$scope.component.key].push(fileInfo);
                   $scope.$apply();
+                  $scope.$emit('fileUploaded', fileName, fileInfo);
                 })
                 .catch(function(response) {
                   $scope.fileUploads[fileName].status = 'error';
                   $scope.fileUploads[fileName].message = response.data;
                   delete $scope.fileUploads[fileName].progress;
                   $scope.$apply();
+                  $scope.$emit('fileUploadFailed', fileName, response);
                 });
             }
           });

@@ -1,3 +1,5 @@
+var _get = require('lodash/get');
+
 module.exports = [
   'Formio',
   'formioComponents',
@@ -12,12 +14,15 @@ module.exports = [
       scope: {
         component: '=',
         data: '=',
+        submission: '=',
+        hideComponents: '=',
         formio: '=',
         formioForm: '=',
         readOnly: '=',
         gridRow: '=',
         gridCol: '=',
-        show: '='
+        builder: '=?',
+        options: '=?'
       },
       templateUrl: 'formio/component.html',
       link: function(scope, el, attrs, formioCtrl) {
@@ -34,11 +39,16 @@ module.exports = [
         '$scope',
         '$http',
         '$controller',
+        'FormioUtils',
+        '$timeout',
         function(
           $scope,
           $http,
-          $controller
+          $controller,
+          FormioUtils,
+          $timeout
         ) {
+          $scope.builder = $scope.builder || false;
           // Options to match jquery.maskedinput masks
           $scope.uiMaskOptions = {
             maskDefinitions: {
@@ -51,24 +61,148 @@ module.exports = [
             silentEvents: ['click', 'focus']
           };
 
+          // See if this component is visible or not.
+          $scope.isVisible = function(component, row) {
+            if ($scope.builder) return true;
+            return FormioUtils.isVisible(
+              component,
+              row,
+              $scope.submission ? $scope.submission.data : null,
+              $scope.hideComponents
+            );
+          };
+
+          // FOR-245 - Fix reset buttons.
+          $scope.resetForm = function() {
+            // Manually remove each key so we don't lose a reference to original
+            // data in child scopes.
+            for (var key in $scope.data) {
+              delete $scope.data[key];
+            }
+
+            // Set the form to pristine again.
+            for (var compKey in $scope.formioForm) {
+              if ($scope.formioForm[compKey].hasOwnProperty('$setPristine')) {
+                $scope.formioForm[compKey].$setPristine();
+                $scope.formioForm[compKey].$setUntouched();
+              }
+            }
+          };
+
+          $scope.isDisabled = function(component) {
+            return $scope.readOnly || (typeof $scope.$parent.isDisabled === 'function' && $scope.$parent.isDisabled(component));
+          };
+
+          $scope.isRequired = function(component) {
+            return FormioUtils.isRequired(component);
+          };
+
+          // Survey components haves questions.
+          // We want to make the survey component label marked with error if any
+          // of the questions is in invalid state.
+          // So, first check if conponent has questions, then iterate over them.
+          // Break in the first invalid question. Is enough to set the has-error
+          // class to the survey component.
+          // Note: Chek that this method is used in the template.
+          $scope.invalidQuestions = function(formioForm) {
+            var errorInQuestions = false;
+            if (!$scope.component.questions) {
+              errorInQuestions = false;
+            }
+            else {
+              var i;
+              for (i = 0; i < $scope.component.questions.length; i++) {
+                var question = $scope.component.questions[i];
+                var questionInputName = [$scope.component.key, question.value].join('-');
+                var formInput = formioForm[questionInputName];
+                if (formInput && !formInput.$pristine && formInput.$invalid) {
+                  errorInQuestions = true;
+                  break;
+                }
+              }
+            }
+            return errorInQuestions;
+          };
+
           // Pass through checkConditional since this is an isolate scope.
           $scope.checkConditional = $scope.$parent.checkConditional;
+
+          // FOR-71 - Dont watch in the builder view.
+          // Calculate value when data changes.
+          if (!$scope.builder && ($scope.component.calculateValue || _get($scope.component, 'validate.json'))) {
+            $scope.$watch('data', function() {
+              FormioUtils.checkCalculated($scope.component, $scope.submission, $scope.data);
+
+              // Process jsonLogic stuff if present.
+              if (_get($scope.component, 'validate.json')) {
+                var input;
+
+                // Only json parse once.
+                if (typeof $scope.component.validate.json === 'string') {
+                  try {
+                    input = JSON.parse($scope.component.validate.json);
+                    $scope.component.validate.json = input;
+                  }
+                  catch (e) {
+                    /* eslint-disable no-console */
+                    console.warn('Invalid JSON validator given for ' + $scope.component.key);
+                    console.warn($scope.component.validate.json);
+                    /* eslint-enable no-console */
+                    delete $scope.component.validate.json;
+                    return;
+                  }
+                }
+                else {
+                  input = $scope.component.validate.json;
+                }
+
+                var valid;
+                try {
+                  valid = FormioUtils.jsonLogic.apply(input, {
+                    data: $scope.submission ? $scope.submission.data : $scope.data,
+                    row: $scope.data
+                  });
+                }
+                catch (err) {
+                  valid = err.message;
+                }
+
+                $timeout(function() {
+                  try {
+                    if (valid !== true) {
+                      $scope.component.customError = valid;
+                      $scope.formioForm[$scope.component.key].$setValidity('custom', false);
+                      return;
+                    }
+
+                    $scope.formioForm[$scope.component.key].$setValidity('custom', true);
+                  }
+                  catch (e) {
+                    // Ignore any issues while editing the components.
+                  }
+                });
+              }
+            }, true);
+          }
 
           // Get the settings.
           var component = formioComponents.components[$scope.component.type] || formioComponents.components['custom'];
 
           // Set the component with the defaults from the component settings.
+          // Dont add the default key, so that components without keys will remain visible by default.
           angular.forEach(component.settings, function(value, key) {
-            if (!$scope.component.hasOwnProperty(key)) {
+            if (!$scope.component.hasOwnProperty(key) && key !== 'key') {
               $scope.component[key] = angular.copy(value);
             }
           });
 
           // Add a new field value.
           $scope.addFieldValue = function() {
-            var value = $scope.component.hasOwnProperty('defaultValue') ? $scope.component.defaultValue : '';
-            $scope.data[$scope.component.key] = $scope.data[$scope.component.key] || [];
-            $scope.data[$scope.component.key].push(value);
+            var defaultData = {};
+            FormioUtils.checkDefaultValue($scope.component, $scope.submission, defaultData, $scope, function() {
+              $scope.data[$scope.component.key] = $scope.data[$scope.component.key] || [];
+              $scope.data[$scope.component.key].push(defaultData[$scope.component.key]);
+            });
           };
 
           // Remove a field value.
@@ -103,54 +237,18 @@ module.exports = [
               component.controller($scope.component, $scope, $http, Formio);
             }
             else {
-              $controller(component.controller, {$scope: $scope});
+              $controller(component.controller, {$scope: $scope, $timeout: $timeout});
             }
           }
 
-          $scope.$watch('component.multiple', function() {
-            // Establish a default for data.
-            $scope.data = $scope.data || {};
-            if ($scope.component.multiple) {
-              var value = null;
-              if ($scope.data.hasOwnProperty($scope.component.key)) {
-                // If a value is present, and its an array, assign it to the value.
-                if ($scope.data[$scope.component.key] instanceof Array) {
-                  value = $scope.data[$scope.component.key];
-                }
-                // If a value is present and it is not an array, wrap the value.
-                else {
-                  value = [$scope.data[$scope.component.key]];
-                }
-              }
-              else if ($scope.component.hasOwnProperty('defaultValue')) {
-                // If there is a default value and it is an array, assign it to the value.
-                if ($scope.component.defaultValue instanceof Array) {
-                  value = $scope.component.defaultValue;
-                }
-                // If there is a default value and it is not an array, wrap the value.
-                else {
-                  value = [$scope.component.defaultValue];
-                }
-              }
-              else {
-                // Couldn't safely default, make it a simple array. Possibly add a single obj or string later.
-                value = [];
-              }
-
-              // Use the current data or default.
-              $scope.data[$scope.component.key] = value;
-            }
-            else {
-              // Use the current data or default.
-              if ($scope.data.hasOwnProperty($scope.component.key)) {
-                $scope.data[$scope.component.key] = $scope.data[$scope.component.key];
-              }
-              // FA-835 - The default values for select boxes are set in the component.
-              else if ($scope.component.hasOwnProperty('defaultValue') && $scope.component.type !== 'selectboxes') {
-                $scope.data[$scope.component.key] = $scope.component.defaultValue;
-              }
-            }
-          });
+          // FOR-71 - Dont watch in the builder view.
+          if (!$scope.builder) {
+            $scope.$watch('component.multiple', function() {
+              $scope.data = $scope.data || {};
+              FormioUtils.checkDefaultValue($scope.component, $scope.submission, $scope.data, $scope);
+              return;
+            });
+          }
 
           // Set the component name.
           $scope.componentId = $scope.component.key;

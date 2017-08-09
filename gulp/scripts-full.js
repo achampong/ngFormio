@@ -8,7 +8,8 @@ module.exports = function(gulp, plugins) {
         SignaturePad: function() {
           return 'require("signature_pad")';
         }
-      }
+      },
+      ignoreMissing: true
     })
       .bundle()
       .pipe(plugins.source('formio-full.js'))

@@ -1,4 +1,5 @@
 var fs = require('fs');
+var SignaturePad = require('signature_pad');
 module.exports = function(app) {
   app.config([
     'formioComponentsProvider',
@@ -25,6 +26,8 @@ module.exports = function(app) {
           maxWidth: '2.5',
           protected: false,
           persistent: true,
+          hidden: false,
+          clearOnHide: true,
           validate: {
             required: false
           }
@@ -41,6 +44,7 @@ module.exports = function(app) {
       },
       require: '?ngModel',
       link: function(scope, element, attrs, ngModel) {
+        if (scope.builder) return;
         if (!ngModel) {
           return;
         }
@@ -62,20 +66,14 @@ module.exports = function(app) {
           }
         };
 
+        // Set the width and height of the canvas.
         // Reset size if element changes visibility.
-        scope.$watch('component.display', function(newDisplay) {
-          if (newDisplay) {
-            setDimension('width');
-            setDimension('height');
-          }
+        scope.$watch('component.display', function() {
+          setDimension('width');
+          setDimension('height');
         });
 
-        // Set the width and height of the canvas.
-        setDimension('width');
-        setDimension('height');
-
         // Create the signature pad.
-        /* global SignaturePad:false */
         var signaturePad = new SignaturePad(element[0], {
           minWidth: scope.component.minWidth,
           maxWidth: scope.component.maxWidth,
@@ -106,7 +104,7 @@ module.exports = function(app) {
         });
 
         function readSignature() {
-          if (scope.component.validate.required && signaturePad.isEmpty()) {
+          if (scope.$parent.isRequired(scope.component) && signaturePad.isEmpty()) {
             ngModel.$setViewValue('');
           }
           else {
@@ -115,7 +113,8 @@ module.exports = function(app) {
         }
 
         ngModel.$render = function() {
-          signaturePad.fromDataURL(ngModel.$viewValue);
+          var dataUrl = ngModel.$viewValue || '';
+          signaturePad.fromDataURL(dataUrl);
         };
         signaturePad.onEnd = function() {
           scope.$evalAsync(readSignature);
